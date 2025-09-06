@@ -187,19 +187,30 @@ class PollenShell:
         for it in range(1, maxiter + 1):
             def closure():
                 opt.zero_grad()
+                with torch.no_grad():
+                    if fix_centroid:
+                        V.data -= V.data.mean(dim=0) - c0
+                    if pinned is not None:
+                        V.data[pinned] = pinned_pos
                 E = obj(V)
                 E.backward()
                 if pinned is not None:
                     V.grad[pinned] = 0
                 return E
 
-            E = opt.step(closure)
+            opt.step(closure)
 
             with torch.no_grad():
                 if fix_centroid:
-                    V -= V.mean(dim=0) - c0
+                    V.data -= V.data.mean(dim=0) - c0
                 if pinned is not None:
-                    V[pinned] = pinned_pos
+                    V.data[pinned] = pinned_pos
+
+            opt.zero_grad()
+            E = obj(V)
+            E.backward()
+            if pinned is not None:
+                V.grad[pinned] = 0
 
             g = V.grad.detach()
             last_gnorm = float(torch.linalg.vector_norm(g)) if g is not None else None
