@@ -31,11 +31,14 @@ uiQueue = queue.Queue(maxsize=1)
 iter_idx_text = [0]
 energy_text = [0.0]
 volume_text = [shell.volume(shell.verts)]
+grad_text = [0.0]
 
-def on_step(iter_idx, energy, verts, volume):
+
+def on_step(iter_idx, energy, verts, volume, grad_norm):
     iter_idx_text[0] = iter_idx
     energy_text[0] = energy
     volume_text[0] = volume
+    grad_text[0] = grad_norm
     try:
         if uiQueue.full():
             uiQueue.get_nowait()
@@ -50,7 +53,11 @@ def ui_tick():
         return
     # Apply in GUI thread only:
     shell.mesh.points = V
-    p.add_text(f"iter {iter_idx_text[0]}  E={energy_text[0]:.3e}  V={volume_text[0]:.3e}", name="hud", font_size=10)
+    p.add_text(
+        f"iter {iter_idx_text[0]}  E={energy_text[0]:.3e}  V={volume_text[0]:.3e}  |g|={grad_text[0]:.3e}",
+        name="hud",
+        font_size=10,
+    )
     p.render()
 
 p.add_callback(ui_tick, interval=40)  # ~25 FPS poll

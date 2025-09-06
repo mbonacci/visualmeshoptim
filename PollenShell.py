@@ -155,7 +155,7 @@ class PollenShell:
         maxiter: int = 200,
         tol: float = 1e-6,
         verbose: bool = True,
-        callback: Optional[Callable[[int, float, np.ndarray, float], None]] = None,
+        callback: Optional[Callable[[int, float, np.ndarray, float, float], None]] = None,
         optimizer: str = "LBFGS",
     ):
         """Generic optimizer using torch.optim.
@@ -164,7 +164,7 @@ class PollenShell:
         ``(N,3)`` tensor and return a scalar energy.  ``pinned_idx`` contains
         vertex indices that should remain fixed, and ``fix_centroid`` keeps the
         centroid at its initial location.  ``callback`` receives
-        ``(iter_idx, energy_value, verts_numpy, volume)`` on each step.
+        ``(iter_idx, energy_value, verts_numpy, volume, grad_norm)`` on each step.
         """
 
         V = torch.nn.Parameter(self.verts.clone())
@@ -189,8 +189,10 @@ class PollenShell:
                 opt.zero_grad()
                 with torch.no_grad():
                     if fix_centroid:
-                        V.data -= V.data.mean(dim=0) - c0
+                        # keep the centroid anchored to its initial position
+                        V.data -= V.mean(dim=0) - c0
                     if pinned is not None:
+                        # maintain pinned vertices at their original locations
                         V.data[pinned] = pinned_pos
                 E = obj(V)
                 E.backward()
@@ -202,7 +204,7 @@ class PollenShell:
 
             with torch.no_grad():
                 if fix_centroid:
-                    V.data -= V.data.mean(dim=0) - c0
+                    V.data -= V.mean(dim=0) - c0
                 if pinned is not None:
                     V.data[pinned] = pinned_pos
 
@@ -217,7 +219,13 @@ class PollenShell:
 
             if callback:
                 V_np = V.detach().cpu().numpy()
-                callback(it, float(E.detach().cpu().numpy()), V_np, float(self.volume(V)))
+                callback(
+                    it,
+                    float(E.detach().cpu().numpy()),
+                    V_np,
+                    float(self.volume(V)),
+                    last_gnorm,
+                )
 
             if last_gnorm is not None and last_gnorm < tol:
                 break
