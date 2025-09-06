@@ -5,9 +5,7 @@ import numpy as np
 from sympy import E
 import torch
 from typing import Iterable, Optional, Callable
-from scipy.optimize import minimize
 import pyvista as pv
-from zmq import device
 import MeshUtils as mu
 
 class PollenShell:
@@ -149,58 +147,75 @@ class PollenShell:
     # Optimization helper methods
     # -----------------
 
-    def _optimize_autograd(
+    def _optimize(
         self,
-        obj : Callable[[torch.Tensor], float],
+        obj: Callable[[torch.Tensor], torch.Tensor],
         pinned_idx: Optional[Iterable[int]] = None,
         fix_centroid: bool = True,
-        method: str = "L-BFGS-B",
         maxiter: int = 200,
         tol: float = 1e-6,
         verbose: bool = True,
-        callback=None
+        callback: Optional[Callable[[int, float, np.ndarray, float], None]] = None,
+        optimizer: str = "LBFGS",
     ):
-        V0 = self.verts.detach().cpu().numpy()
-        N = V0.shape[0]
-        pinned = np.zeros(N, dtype=bool)
+        """Generic optimizer using torch.optim.
+
+        Parameters mirror the previous SciPy-based helper.  ``obj`` should take a
+        ``(N,3)`` tensor and return a scalar energy.  ``pinned_idx`` contains
+        vertex indices that should remain fixed, and ``fix_centroid`` keeps the
+        centroid at its initial location.  ``callback`` receives
+        ``(iter_idx, energy_value, verts_numpy, volume)`` on each step.
+        """
+
+        V = torch.nn.Parameter(self.verts.clone())
+        c0 = V.detach().mean(dim=0) if fix_centroid else None
+
+        pinned = None
+        pinned_pos = None
         if pinned_idx is not None:
-            pinned[np.unique(np.asarray(list(pinned_idx), dtype=int))] = True
-        free = np.where(~pinned)[0]
-        c0 = V0.mean(axis=0) 
+            pinned = torch.as_tensor(list(pinned_idx), device=self.device, dtype=torch.long)
+            pinned_pos = V.detach()[pinned].clone()
 
-        iter_k = {"k": 0}
-        def cb(xk):
-            iter_k["k"] += 1
-            V_np = unpack(xk)
-            if fix_centroid: V_np -= (V_np.mean(axis=0) - c0)
-            self.update_vertices(V_np)  
+        if optimizer.lower() == "lbfgs":
+            opt = torch.optim.LBFGS([V], lr=1.0, max_iter=20, line_search_fn="strong_wolfe")
+        elif optimizer.lower() == "adam":
+            opt = torch.optim.Adam([V], lr=1e-2)
+        else:
+            raise ValueError(f"Unknown optimizer '{optimizer}'")
+
+        last_gnorm = None
+        for it in range(1, maxiter + 1):
+            def closure():
+                opt.zero_grad()
+                E = obj(V)
+                E.backward()
+                if pinned is not None:
+                    V.grad[pinned] = 0
+                return E
+
+            E = opt.step(closure)
+
+            with torch.no_grad():
+                if fix_centroid:
+                    V -= V.mean(dim=0) - c0
+                if pinned is not None:
+                    V[pinned] = pinned_pos
+
+            g = V.grad.detach()
+            last_gnorm = float(torch.linalg.vector_norm(g)) if g is not None else None
+
             if callback:
-                E_val, _ = obj_and_grad(xk)  # cheap: one forward pass
-                callback(iter_k["k"], E_val, V_np, self.volume())
+                V_np = V.detach().cpu().numpy()
+                callback(it, float(E.detach().cpu().numpy()), V_np, float(self.volume(V)))
 
-        def pack(V): return V[free].reshape(-1, 3).ravel()
-        def unpack(xfree): V_np = V0.copy(); V_np[free] = xfree.reshape(-1, 3); return V_np
+            if last_gnorm is not None and last_gnorm < tol:
+                break
 
-        def obj_and_grad(x):
-            U = torch.as_tensor(unpack(x), device=self.device, dtype=torch.double)
-            U.requires_grad_()
-            E = obj(U)
-            E.backward()
-            grad = U.grad.detach().cpu().numpy()[free].reshape(-1, 3).ravel()
-            return float(E.detach().cpu().numpy()), grad
-
-
-        x0 = pack(V0)
-        res = minimize(obj_and_grad, x0,
-                       jac=True, method=method,
-                       options={"maxiter": maxiter,  "gtol": tol, "disp": verbose},
-                       callback=cb)
-        V_final = unpack(res.x)
-        self.update_vertices(V_final)
+        self.update_vertices(V.detach())
         if verbose:
-            print(f"[optimize_autograd] status={res.status} iters={res.nit} msg={res.message}")
+            print(f"[optimize] iters={it} grad_norm={last_gnorm:.3e}")
             print(f"final vol={self.volume():.6g}")
-        return res
+        return {"niter": it, "grad_norm": last_gnorm}
 
     def optimize_pressure(
         self,
@@ -212,9 +227,15 @@ class PollenShell:
         on_step=None,
         verbose: bool = True,
     ):
-        return self._optimize_autograd(
-            lambda V: self.total_energy(V, pressure), 
-            pinned_idx, fix_centroid, "CG", maxiter, tol, verbose, on_step)
+        return self._optimize(
+            lambda V: self.total_energy(V, pressure),
+            pinned_idx=pinned_idx,
+            fix_centroid=fix_centroid,
+            maxiter=maxiter,
+            tol=tol,
+            verbose=verbose,
+            callback=on_step,
+            optimizer="LBFGS")
 
     def optimize_volume(
         self,
@@ -227,9 +248,15 @@ class PollenShell:
         verbose: bool = True,
         callback=None,
     ):
-        return self._optimize_autograd(
+        return self._optimize(
             lambda V: self.strech_energy(V) + self.bend_energy(V) + 0.5 * beta * (self.volume(V) - V_target) ** 2,
-            pinned_idx, fix_centroid, "L-BFGS-B", maxiter, tol, verbose, callback)
+            pinned_idx=pinned_idx,
+            fix_centroid=fix_centroid,
+            maxiter=maxiter,
+            tol=tol,
+            verbose=verbose,
+            callback=callback,
+            optimizer="LBFGS")
 
 
     # -----------------
