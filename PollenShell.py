@@ -1,12 +1,15 @@
-from re import M, S
+from re import L, M, S
 import re
-from tkinter import SE
 import numpy as np
-from sympy import E
 import torch
 from typing import Iterable, Optional, Callable
-import pyvista as pv
 import MeshUtils as mu
+
+# Make PyVista optional to decouple visualization from core logic
+try:
+    import pyvista as pv  # type: ignore
+except Exception:
+    pv = None
 
 class PollenShell:
     """
@@ -75,11 +78,17 @@ class PollenShell:
 
         obj._ingest(verts, faces, edges, v_stiffness)
 
-        # Build PyVista mesh (optional but requested)
-        pv_faces = mu.faces_to_pv_faces(obj.faces.cpu().numpy())
-        obj.mesh = pv.PolyData(obj.verts.detach().cpu().numpy(), pv_faces)
-        # Store the vertex layer as point data for coloring
-        obj.mesh.point_data["Stiffness"] = obj.vertex_stiffness.detach().cpu().numpy()
+        # Optionally build a PyVista mesh if PyVista is available
+        obj.mesh = None
+        if pv is not None:
+            try:
+                pv_faces = mu.faces_to_pv_faces(obj.faces.cpu().numpy())
+                obj.mesh = pv.PolyData(obj.verts.detach().cpu().numpy(), pv_faces)
+                # Store the vertex layer as point data for coloring
+                obj.mesh.point_data["Stiffness"] = obj.vertex_stiffness.detach().cpu().numpy()
+            except Exception:
+                # If PyVista construction fails, proceed without it
+                obj.mesh = None
         return obj
 
     def _ingest(self, verts, faces, edges, v_stiffness):
@@ -98,10 +107,9 @@ class PollenShell:
         self.L0 = mu.edge_lengths(self.verts, self.edges)
 
         # Bending topology and rest dihedrals
-        self.bend_edges = torch.as_tensor(mu.build_bending_adjacency(self.faces.cpu().numpy()), device=self.device, dtype=torch.long) # (B, 2)
+        self.bend_edges = torch.as_tensor(mu.build_bending_adjacency(self.faces.cpu().numpy()), device=self.device, dtype=torch.long) # (B, 4)
         if self.rest_bend_from_mesh:
             self.theta0 = mu.signed_dihedrals(self.verts, self.bend_edges)
-            #self.theta0 = torch.as_tensor(mu.compute_rest_dihedrals(self.verts.cpu().numpy(), self.bend_edges.cpu().numpy()), device=self.device, dtype=torch.double)
         else:
             self.theta0 = torch.zeros((self.bend_edges.shape[0],), device=self.device, dtype=torch.double)
 
@@ -110,15 +118,7 @@ class PollenShell:
         kb_factor = 0.5 * (vfac[be[:, 0]] + vfac[be[:, 1]])
         self.k_bend = self.bend_k_scale * kb_factor
 
-
-    # -----------------
-    # Utility / helpers
-    # -----------------
-
-    def update_vertices(self, new_verts):
-        self.verts = torch.as_tensor(new_verts, device=self.device, dtype=torch.double)
-
-    # -----------------
+   # -----------------
     # Energy functions
     # -----------------
 
@@ -134,6 +134,7 @@ class PollenShell:
         return 0.5 * torch.sum(self.k_bend * (dtheta ** 2))
 
     def pressure_energy(self, V: torch.Tensor, pressure: float) -> float:
+        # Pressure is a force per unit volume
         return -float(pressure) * mu.signed_volume(V, self.faces)
 
     def total_energy(self, V: torch.Tensor, pressure: float) -> float:
@@ -141,6 +142,46 @@ class PollenShell:
 
     def volume(self, V: torch.Tensor = None) -> float:
         return mu.signed_volume(V if V is not None else self.verts, self.faces).float()
+
+
+    def optimize_pressure(
+        self,
+        pressure: float,
+        pinned_idx: Optional[Iterable[int]] = None,
+        fix_centroid: bool = True,
+        maxiter: int = 200,
+        tol: float = 1e-6,
+        on_step=None,
+        verbose: bool = True):
+        return self._optimize(
+            lambda V: self.total_energy(V, pressure),
+            pinned_idx=pinned_idx,
+            fix_centroid=fix_centroid,
+            maxiter=maxiter,
+            tol=tol,
+            verbose=verbose,
+            callback=on_step,
+            optimizer="LBFGS")
+
+    def optimize_volume(
+        self,
+        V_target: float,
+        beta: float = 1.0,
+        pinned_idx: Optional[Iterable[int]] = None,
+        fix_centroid: bool = True,
+        maxiter: int = 200,
+        tol: float = 1e-6,
+        verbose: bool = True,
+        callback=None):
+        return self._optimize(
+            lambda V: self.strech_energy(V) + self.bend_energy(V) + 0.5 * beta * (self.volume(V) - V_target) ** 2,
+            pinned_idx=pinned_idx,
+            fix_centroid=fix_centroid,
+            maxiter=maxiter,
+            tol=tol,
+            verbose=verbose,
+            callback=callback,
+            optimizer="LBFGS")
 
 
     # -----------------
@@ -167,7 +208,7 @@ class PollenShell:
         ``(iter_idx, energy_value, verts_numpy, volume, grad_norm)`` on each step.
         """
 
-        V = torch.nn.Parameter(self.verts.clone())
+        V = torch.nn.Parameter(self.verts.clone()).to(dtype=torch.double)
         c0 = V.detach().mean(dim=0) if fix_centroid else None
 
         pinned = None
@@ -176,15 +217,23 @@ class PollenShell:
             pinned = torch.as_tensor(list(pinned_idx), device=self.device, dtype=torch.long)
             pinned_pos = V.detach()[pinned].clone()
 
+        if verbose:
+            print("Initializing optimizer...")
         if optimizer.lower() == "lbfgs":
-            opt = torch.optim.LBFGS([V], lr=1.0, max_iter=20, line_search_fn="strong_wolfe")
+            opt = torch.optim.LBFGS([V], lr=1e-2, history_size=40, line_search_fn="strong_wolfe")
         elif optimizer.lower() == "adam":
-            opt = torch.optim.Adam([V], lr=1e-2)
+            opt = torch.optim.Adam([V], lr=1e-4)
         else:
             raise ValueError(f"Unknown optimizer '{optimizer}'")
 
+        if verbose:
+            print("Starting optimization...")
+        # faces as numpy for CPU-side volume calc without GPU sync
+        faces_np = self.faces.detach().cpu().numpy()
         last_gnorm = None
         for it in range(1, maxiter + 1):
+            if verbose:
+                print(f"iter {it}")
             def closure():
                 opt.zero_grad()
                 with torch.no_grad():
@@ -218,12 +267,14 @@ class PollenShell:
             last_gnorm = float(torch.linalg.vector_norm(g)) if g is not None else None
 
             if callback:
+                # Convert vertices to CPU numpy
                 V_np = V.detach().cpu().numpy()
+                vol = float(self.volume(V).detach().cpu().numpy())
                 callback(
                     it,
                     float(E.detach().cpu().numpy()),
                     V_np,
-                    float(self.volume(V)),
+                    vol,
                     last_gnorm,
                 )
 
@@ -236,47 +287,12 @@ class PollenShell:
             print(f"final vol={self.volume():.6g}")
         return {"niter": it, "grad_norm": last_gnorm}
 
-    def optimize_pressure(
-        self,
-        pressure: float,
-        pinned_idx: Optional[Iterable[int]] = None,
-        fix_centroid: bool = True,
-        maxiter: int = 200,
-        tol: float = 1e-6,
-        on_step=None,
-        verbose: bool = True,
-    ):
-        return self._optimize(
-            lambda V: self.total_energy(V, pressure),
-            pinned_idx=pinned_idx,
-            fix_centroid=fix_centroid,
-            maxiter=maxiter,
-            tol=tol,
-            verbose=verbose,
-            callback=on_step,
-            optimizer="LBFGS")
+    # -----------------
+    # Utility / helpers
+    # -----------------
 
-    def optimize_volume(
-        self,
-        V_target: float,
-        beta: float = 1.0,
-        pinned_idx: Optional[Iterable[int]] = None,
-        fix_centroid: bool = True,
-        maxiter: int = 200,
-        tol: float = 1e-6,
-        verbose: bool = True,
-        callback=None,
-    ):
-        return self._optimize(
-            lambda V: self.strech_energy(V) + self.bend_energy(V) + 0.5 * beta * (self.volume(V) - V_target) ** 2,
-            pinned_idx=pinned_idx,
-            fix_centroid=fix_centroid,
-            maxiter=maxiter,
-            tol=tol,
-            verbose=verbose,
-            callback=callback,
-            optimizer="LBFGS")
-
+    def update_vertices(self, new_verts):
+        self.verts = torch.as_tensor(new_verts, device=self.device, dtype=torch.double)
 
     # -----------------
     # Diagnostics

@@ -64,25 +64,25 @@ p.add_callback(ui_tick, interval=40)  # ~25 FPS poll
 
 # 3) Run relaxation (keep centroid fixed)
 def run_relax():
-    # res = shell.optimize_pressure(
-    #     pressure=2.0,
-    #     #pinned_idx=[0],     # keep at least one vertex pinned
-    #     fix_centroid=True,
-    #     maxiter=50000,
-    #     tol=1e-14,
-    #     on_step=on_step,
-    #     verbose=True
-    # )
-    res = shell.optimize_volume(
-        V_target=1.0,
-        beta=25.0,
+    res = shell.optimize_pressure(
+        pressure=-2.0,
         #pinned_idx=[0],     # keep at least one vertex pinned
-        fix_centroid=True,
-        maxiter=50000,
-        tol=1e-15,
-        callback=on_step,
+        fix_centroid=False,
+        maxiter=5000,
+        tol=1e-14,
+        on_step=on_step,
         verbose=True
     )
+    # res = shell.optimize_volume(
+    #     V_target=1.0,
+    #     beta=25.0,
+    #     #pinned_idx=[0],     # keep at least one vertex pinned
+    #     fix_centroid=False,
+    #     maxiter=300,
+    #     tol=1e-15,
+    #     callback=on_step,
+    #     verbose=True
+    # )
 
 # 3) Start relaxation in a separate thread
 relax_thread = threading.Thread(target=run_relax, daemon=True)

@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>da41ba4f-9bed-46fc-b314-c7214e30f072</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>PollenSim.py</StartupFile>
+    <StartupFile>PollenSim_polyscope.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -27,6 +27,7 @@
     <Compile Include="PollenSim.py" />
     <Compile Include="MeshUtils.py" />
     <Compile Include="PollenShell.py" />
+    <Compile Include="PollenSim_polyscope.py" />
   </ItemGroup>
   <ItemGroup>
     <InterpreterReference Include="Global|PythonCore|3.11" />
