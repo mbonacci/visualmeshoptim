@@ -91,6 +91,43 @@ class PollenShell:
                 obj.mesh = None
         return obj
 
+    @classmethod
+    def from_pt(cls, path, device, edge_k_scale: float = 1.0, bend_k_scale: float = 0.1,
+                rest_bend_from_mesh: bool = True):
+        """
+        Load a shell from a .pt file written by Export_shell.py
+        (Torch tensors saved via torch.save).
+        Expected keys:
+          - 'vertices': (N,3) float tensor
+          - 'faces': (T,3) long tensor
+          - 'edges': (M,2) long tensor
+          - one or more 'v_*' vertex attribute tensors
+        """
+        obj = cls(device, edge_k_scale=edge_k_scale, bend_k_scale=bend_k_scale,
+                  rest_bend_from_mesh=rest_bend_from_mesh)
+        # map_location CPU to be safe across systems; tensors are moved in _ingest
+        data = torch.load(path, map_location='cpu')
+        verts = data['vertices']  # torch.Tensor
+        faces = data['faces']
+        edges = data['edges']
+        v_keys = [k for k in data.keys() if isinstance(k, str) and k.startswith("v_")]
+        if len(v_keys) < 1:
+            raise ValueError(f"Expected at least one 'v_*' vertex layer in {path}, found {len(v_keys)}: {v_keys}")
+        v_layer = data[v_keys[0]]  # torch.Tensor
+        # Reuse existing numpy helper for robust handling of RGB/scalar
+        v_stiffness = mu.to_scalar_layer_np(v_layer.detach().cpu().numpy())
+        obj._ingest(verts, faces, edges, v_stiffness)
+        # Optional PyVista mesh
+        obj.mesh = None
+        if pv is not None:
+            try:
+                pv_faces = mu.faces_to_pv_faces(obj.faces.cpu().numpy())
+                obj.mesh = pv.PolyData(obj.verts.detach().cpu().numpy(), pv_faces)
+                obj.mesh.point_data["Stiffness"] = obj.vertex_stiffness.detach().cpu().numpy()
+            except Exception:
+                obj.mesh = None
+        return obj
+    
     def _ingest(self, verts, faces, edges, v_stiffness):
         self.verts = torch.as_tensor(verts, device=self.device, dtype=torch.double)
         self.faces = torch.as_tensor(faces, device=self.device, dtype=torch.long)

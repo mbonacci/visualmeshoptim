@@ -24,7 +24,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Export_shell.py" />
-    <Compile Include="PollenSim.py" />
     <Compile Include="MeshUtils.py" />
     <Compile Include="PollenShell.py" />
     <Compile Include="PollenSim_polyscope.py" />

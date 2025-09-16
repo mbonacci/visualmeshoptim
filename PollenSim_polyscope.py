@@ -1,19 +1,15 @@
-from math import e
-from pathlib import Path
 import threading
 import queue
 
 import numpy as np
 import time
 import torch
-from torch.utils import cmake_prefix_path
-
-from PollenShell import PollenShell
 
 # Visualization via Polyscope (pip install polyscope)
 import polyscope as ps
 import polyscope.imgui as psim
 
+from PollenShell import PollenShell
 
 def main():
     # 1) Load shell
@@ -35,7 +31,7 @@ def main():
 
     ps.set_max_fps(60)           # set FPS cap
     ps.set_enable_vsync(False)   # don't block on vblank
-    ps.set_SSAA_factor(3)
+    ps.set_SSAA_factor(3)        # 3x supersampling for better rendering
 
     ps.init()
 
@@ -44,7 +40,7 @@ def main():
     # Add per-vertex scalar quantity for stiffness and enable it
     q = m.add_scalar_quantity("Stiffness", v_stiff, defined_on="vertices", enabled=True, cmap="viridis")
 
-    # Optional: light edge overlay for readability
+    # Add light edge overlay for readability
     m.set_edge_width(0.3)
     m.set_edge_color((0.2, 0.2, 0.2))
 
