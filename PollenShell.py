@@ -198,6 +198,7 @@ class PollenShell:
         verbose: bool = True,
         callback: Optional[Callable[[int, float, np.ndarray, float, float], None]] = None,
         optimizer: str = "LBFGS",
+        should_stop: Optional[Callable[[], bool]] = None,
     ):
         """Generic optimizer using torch.optim.
 
@@ -232,6 +233,10 @@ class PollenShell:
         faces_np = self.faces.detach().cpu().numpy()
         last_gnorm = None
         for it in range(1, maxiter + 1):
+            if should_stop is not None and should_stop():
+                if verbose:
+                    print("[optimize] stop requested, exiting early")
+                break
             if verbose:
                 print(f"iter {it}")
             def closure():
