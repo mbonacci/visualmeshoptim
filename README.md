@@ -1,9 +1,15 @@
 # visualmeshoptim
 
-`visualmeshoptim` refactors the original pollen-shell simulation into a reusable
+`visualmeshoptim` ia an attempt to create a reusable
 mesh-optimization toolkit.  It provides a thin abstraction layer (`MeshProblem`)
 for describing geometry-driven objectives, an optimization engine that runs in
 headless or interactive modes, and optional Polyscope visualization helpers.
+
+This library is built using AI coding agents, and is intended to be a POC for 
+using AI to accelerate scientific software development as well as useful tool for
+physics students. It is not yet a mature library, but may be useful for prototyping 
+new mesh optimization problems.
+
 
 ## Features
 
