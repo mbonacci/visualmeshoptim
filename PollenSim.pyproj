@@ -4,15 +4,19 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>da41ba4f-9bed-46fc-b314-c7214e30f072</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>PollenSim_polyscope.py</StartupFile>
-    <SearchPath>
-    </SearchPath>
-    <WorkingDirectory>.</WorkingDirectory>
+    <StartupFile>src\visualmeshoptim\examples\example_pollen.py</StartupFile>
+    <SearchPath>src</SearchPath>
+    <WorkingDirectory>.\src</WorkingDirectory>
     <OutputPath>.</OutputPath>
     <Name>PollenSim</Name>
     <RootNamespace>PollenSim</RootNamespace>
     <IsWindowsApplication>True</IsWindowsApplication>
     <InterpreterId>Global|PythonCore|3.11</InterpreterId>
+    <TestFramework>Pytest</TestFramework>
+    <LaunchProvider>Standard Python launcher</LaunchProvider>
+    <InterpreterArguments>
+    </InterpreterArguments>
+    <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
@@ -23,16 +27,34 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Export_shell.py" />
-    <Compile Include="MeshUtils.py" />
-    <Compile Include="PollenShell.py" />
-    <Compile Include="PollenSim_polyscope.py" />
+    <Compile Include="src\visualmeshoptim\examples\example_pollen.py" />
+    <Compile Include="src\visualmeshoptim\examples\pollen_shell.py" />
+    <Compile Include="src\visualmeshoptim\examples\__init__.py" />
+    <Compile Include="src\visualmeshoptim\geometry.py" />
+    <Compile Include="src\visualmeshoptim\mesh_io.py" />
+    <Compile Include="src\visualmeshoptim\optimizer.py" />
+    <Compile Include="src\visualmeshoptim\problem.py" />
+    <Compile Include="src\visualmeshoptim\utils.py" />
+    <Compile Include="src\visualmeshoptim\visualizer.py" />
+    <Compile Include="src\visualmeshoptim\__init__.py" />
+    <Compile Include="tests\conftest.py" />
+    <Compile Include="tests\test_optimizer.py" />
+    <Compile Include="tests\test_problem_base.py" />
+    <Compile Include="tests\test_visualizer.py" />
   </ItemGroup>
   <ItemGroup>
     <InterpreterReference Include="Global|PythonCore|3.11" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="pollen.npz" />
+    <Content Include="pyproject.toml" />
+    <Content Include="README.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="src\" />
+    <Folder Include="src\visualmeshoptim\" />
+    <Folder Include="src\visualmeshoptim\examples\" />
+    <Folder Include="tests\" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in

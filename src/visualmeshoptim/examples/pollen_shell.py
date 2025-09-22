@@ -81,7 +81,6 @@ class PollenShellProblem(MeshProblem):
         raise ValueError(f"Unsupported mesh format: {self.mesh_path}")
 
     def prepare_data(self, data: MeshData) -> None:
-        edges_np = data.require_edges()
         v_layer = None
         for key, values in data.vertex_attributes.items():
             if key.startswith("v_"):
@@ -89,17 +88,19 @@ class PollenShellProblem(MeshProblem):
                 break
         if v_layer is None:
             raise ValueError("Expected at least one vertex attribute prefixed with 'v_'")
-        stiffness = to_scalar_layer_np(np.asarray(v_layer))
-        self.vertex_stiffness = torch.as_tensor(stiffness, device=self.device, dtype=self.dtype)
-        self.edges = torch.as_tensor(edges_np, device=self.device, dtype=torch.long)
-        self.L0 = edge_lengths(self.get_vertices(), self.edges)
+        self.vertex_stiffness = torch.as_tensor(to_scalar_layer_np(np.asarray(v_layer)), device=self.device, dtype=self.dtype)
+        self.edges = torch.as_tensor(data.require_edges(), device=self.device, dtype=torch.long)
+        
+        self.L0 = edge_lengths(self.vertices, self.edges)
+        
         k_factor = 0.5 * (self.vertex_stiffness[self.edges[:, 0]] + self.vertex_stiffness[self.edges[:, 1]])
         self.k_edge = self.edge_k_scale * k_factor
-        bend_edges_np = build_bending_adjacency(self.get_faces().detach().cpu().numpy())
+        
+        bend_edges_np = build_bending_adjacency(self.faces.detach().cpu().numpy())
         self.bend_edges = torch.as_tensor(bend_edges_np, device=self.device, dtype=torch.long)
         if self.bend_edges.numel() > 0:
             if self.rest_bend_from_mesh:
-                self.theta0 = signed_dihedrals(self.get_vertices(), self.bend_edges)
+                self.theta0 = signed_dihedrals(self.vertices, self.bend_edges)
             else:
                 self.theta0 = torch.zeros((self.bend_edges.shape[0],), device=self.device, dtype=self.dtype)
             kb_factor = 0.5 * (
