@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>da41ba4f-9bed-46fc-b314-c7214e30f072</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>src\visualmeshoptim\examples\example_pollen.py</StartupFile>
+    <StartupFile>src\visualmeshoptim\examples\example_cloth_drape.py</StartupFile>
     <SearchPath>src</SearchPath>
     <WorkingDirectory>.\src</WorkingDirectory>
     <OutputPath>.</OutputPath>
@@ -27,6 +27,8 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="src\visualmeshoptim\examples\cloth_drape.py" />
+    <Compile Include="src\visualmeshoptim\examples\example_cloth_drape.py" />
     <Compile Include="src\visualmeshoptim\examples\example_pollen.py" />
     <Compile Include="src\visualmeshoptim\examples\pollen_shell.py" />
     <Compile Include="src\visualmeshoptim\examples\__init__.py" />

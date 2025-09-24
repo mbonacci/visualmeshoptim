@@ -10,7 +10,7 @@ import argparse
 import torch
 
 from visualmeshoptim import VisualMeshOptimizer
-from .cloth_drape import ClothDrapeProblem
+from visualmeshoptim.examples.cloth_drape import ClothDrapeProblem
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -53,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         gravity=float(args.gravity),
         device=str(args.device),
         dtype=torch.double,
+        fixed_indices=[0, args.cols-1],
     )
 
     optimizer = VisualMeshOptimizer(problem)
